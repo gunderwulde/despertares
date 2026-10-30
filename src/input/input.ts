@@ -31,6 +31,15 @@ export class Input {
       if (b === undefined) return
       this.kbHeld &= ~b
     })
+    // Left mouse button acts as the A (sword) button.
+    window.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return
+      if (!(this.kbHeld & Btn.A)) this.edges |= Btn.A
+      this.kbHeld |= Btn.A
+    })
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.kbHeld &= ~Btn.A
+    })
     window.addEventListener('blur', () => {
       this.kbHeld = 0
     })

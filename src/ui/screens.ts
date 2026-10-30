@@ -151,7 +151,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, hp: number, maxHp: number
   ctx.fillStyle = 'rgba(8,10,30,0.7)'
   ctx.fillRect(0, 0, W, 13)
   drawHearts(ctx, 4, 3, hp, maxHp)
-  drawText(ctx, 'Z:ESPADA', 102, 3, '#cdd6ff')
+  drawText(ctx, 'CLIC:ESPADA', 92, 3, '#cdd6ff')
 }
 
 export function drawPause(ctx: CanvasRenderingContext2D): void {
