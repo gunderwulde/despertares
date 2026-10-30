@@ -135,7 +135,6 @@ export class Game {
     this.world = world
     // The map is static, so one renderer serves every game session.
     this.scene ??= new SceneRenderer(this.glCanvas, world)
-    this.scene.snapCamera()
     this.paused = false
     this.lastRoom = -1
     this.enter('play')
@@ -175,14 +174,11 @@ export class Game {
       this.save()
     }
     if (w.dead) {
-      this.go(() => {
-        w.respawn()
-        this.scene?.snapCamera()
-      })
+      this.go(() => w.respawn())
     }
   }
 
-  render(alpha: number, dtMs: number): void {
+  render(alpha: number): void {
     const ui = this.ui
     ui.clearRect(0, 0, W, H)
     switch (this.screen) {
@@ -194,7 +190,7 @@ export class Game {
         break
       case 'play': {
         const w = this.world!
-        this.scene!.update(w, this.paused ? 1 : alpha, dtMs, performance.now())
+        this.scene!.update(w, this.paused ? 1 : alpha, performance.now())
         this.scene!.render()
         drawHud(ui, w.hp, w.maxHp)
         if (this.paused) drawPause(ui)

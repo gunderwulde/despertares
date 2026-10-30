@@ -1,15 +1,18 @@
 import * as THREE from 'three'
-import { MAP_H, MAP_W, ROOM_H, ROOM_W, T } from '../sim/map'
+import { MAP_H, MAP_W, T } from '../sim/map'
 import { Dir, MAX_ENEMIES, World } from '../sim/world'
 import { makeHeroTextures, makeSlimeTextures, makeSwordTextures, makeTileTextures } from './textures'
 
 export const VIEW_W = 160
 export const VIEW_H = 144
 
+/** World units of screen height at the focus point, in both camera modes. */
+const VIEW_UNITS = 8
+const VIEW_HALF_W = (VIEW_UNITS * (VIEW_W / VIEW_H)) / 2
 const PERSP_FOV = 45
-/** Distance at which the perspective frustum shows 9 world units of height at the focus point, like the ortho view. */
-const PERSP_DIST = 9 / (2 * Math.tan(((PERSP_FOV / 2) * Math.PI) / 180))
-const ELEVATION = (60 * Math.PI) / 180
+const PERSP_DIST = VIEW_UNITS / (2 * Math.tan(((PERSP_FOV / 2) * Math.PI) / 180))
+/** Camera pitch above the ground plane; lower is less top-down. */
+const ELEVATION = (40 * Math.PI) / 180
 const SIN = Math.sin(ELEVATION)
 const COS = Math.cos(ELEVATION)
 /** Upright sprites are stretched so a 1-tile sprite covers one screen unit under the tilted camera. */
@@ -24,7 +27,7 @@ function spriteGeometry(): THREE.PlaneGeometry {
 export class SceneRenderer {
   private readonly renderer: THREE.WebGLRenderer
   private readonly scene = new THREE.Scene()
-  private readonly ortho = new THREE.OrthographicCamera(-5, 5, 4.5, -4.5, 0.1, 100)
+  private readonly ortho = new THREE.OrthographicCamera(-VIEW_HALF_W, VIEW_HALF_W, VIEW_UNITS / 2, -VIEW_UNITS / 2, 0.1, 100)
   private readonly persp = new THREE.PerspectiveCamera(PERSP_FOV, VIEW_W / VIEW_H, 0.1, 100)
   /** Experiment: perspective is the default, press P to compare with the orthographic view. */
   private usePersp = true
@@ -37,9 +40,6 @@ export class SceneRenderer {
   private readonly sword: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
   private readonly slimes: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>[] = []
   private readonly slimeShadows: THREE.Mesh[] = []
-  private camX = 5
-  private camZ = 4.5
-  private camInit = false
 
   constructor(canvas: HTMLCanvasElement, world: World) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false })
@@ -107,7 +107,7 @@ export class SceneRenderer {
     mesh.position.set(x, y, z)
   }
 
-  update(world: World, alpha: number, dtMs: number, timeMs: number): void {
+  update(world: World, alpha: number, timeMs: number): void {
     const lerp = (a: number, b: number): number => a + (b - a) * alpha
 
     // Water scroll in 1/16 steps keeps it pixel-aligned.
@@ -150,30 +150,18 @@ export class SceneRenderer {
       mat.color.setHex(world.ehurt[i]! > 0 ? 0xff7070 : 0xffffff)
     }
 
-    // Camera: centre on the player's room and ease towards it (screen scroll).
-    const tx = world.roomX * ROOM_W + ROOM_W / 2
-    const tz = world.roomY * ROOM_H + ROOM_H / 2
-    if (!this.camInit) {
-      this.camX = tx
-      this.camZ = tz
-      this.camInit = true
-    }
-    const k = 1 - Math.exp(-dtMs * 0.012)
-    this.camX += (tx - this.camX) * k
-    this.camZ += (tz - this.camZ) * k
+    // Camera follows the interpolated player position, clamped so the view stays on the map.
+    const camX = Math.min(Math.max(px, VIEW_HALF_W), MAP_W - VIEW_HALF_W)
+    const camZ = Math.min(Math.max(py - 0.5, 4), MAP_H - 4)
     const cam = this.activeCamera()
     const D = this.usePersp ? PERSP_DIST : 30
-    cam.position.set(this.camX, SIN * D, this.camZ + COS * D)
-    cam.lookAt(this.camX, 0, this.camZ)
+    cam.position.set(camX, SIN * D, camZ + COS * D)
+    cam.lookAt(camX, 0, camZ)
     cam.updateMatrixWorld()
   }
 
   private activeCamera(): THREE.Camera {
     return this.usePersp ? this.persp : this.ortho
-  }
-
-  snapCamera(): void {
-    this.camInit = false
   }
 
   render(): void {

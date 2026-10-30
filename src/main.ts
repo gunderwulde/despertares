@@ -22,5 +22,5 @@ const game = new Game(input, gl, ctx)
 
 runLoop(
   () => game.update(),
-  (alpha, dt) => game.render(alpha, dt),
+  (alpha) => game.render(alpha),
 )
