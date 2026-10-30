@@ -1,8 +1,9 @@
 import { sfx } from '../audio/sfx'
 import type { Input } from '../input/input'
+import type { Art } from '../render/art'
 import { SceneRenderer } from '../render/scene'
 import { Btn, Ev, World } from '../sim/world'
-import { H, W, drawFade, drawFiles, drawHud, drawPause, drawTitle } from '../ui/screens'
+import { H, UI_SCALE, W, drawFade, drawFiles, drawHud, drawPause, drawTitle } from '../ui/screens'
 import { SLOTS, eraseSlot, loadSlot, saveSlot, type SaveData } from './save'
 
 type Screen = 'title' | 'files' | 'play'
@@ -26,6 +27,7 @@ export class Game {
     private readonly input: Input,
     private readonly glCanvas: HTMLCanvasElement,
     private readonly ui: CanvasRenderingContext2D,
+    private readonly art: Art,
   ) {
     this.refreshSaves()
     this.glCanvas.style.visibility = 'hidden'
@@ -125,16 +127,11 @@ export class Game {
     const save = this.saves[this.slot] ?? null
     const world = new World(1000 + this.slot)
     if (save) {
-      world.px = world.ppx = save.x
-      world.py = world.ppy = save.y
-      world.hp = save.hp
-      world.maxHp = save.maxHp
-      world.kills = save.kills
-      if (world.hp <= 0) world.respawn()
+      world.restore(save.x, save.y, save.hp, save.maxHp, save.kills)
     }
     this.world = world
     // The map is static, so one renderer serves every game session.
-    this.scene ??= new SceneRenderer(this.glCanvas, world)
+    this.scene ??= new SceneRenderer(this.glCanvas, world, this.art)
     this.paused = false
     this.lastRoom = -1
     this.enter('play')
@@ -143,7 +140,7 @@ export class Game {
   private save(): void {
     const w = this.world
     if (!w) return
-    saveSlot(this.slot, { hp: w.hp, maxHp: w.maxHp, x: w.px, y: w.py, kills: w.kills })
+    saveSlot(this.slot, { hp: w.hp, maxHp: w.maxHp, x: w.player.x, y: w.player.y, kills: w.kills })
   }
 
   private updatePlay(pressed: number): void {
@@ -180,6 +177,8 @@ export class Game {
 
   render(alpha: number): void {
     const ui = this.ui
+    // UI is laid out on the original 160x144 grid and scaled up to the render resolution.
+    ui.setTransform(UI_SCALE, 0, 0, UI_SCALE, 0, 0)
     ui.clearRect(0, 0, W, H)
     switch (this.screen) {
       case 'title':

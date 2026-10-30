@@ -1,6 +1,8 @@
 import { runLoop } from './core/loop'
 import { Game } from './game/game'
 import { Input } from './input/input'
+import { loadArt } from './render/art'
+import { VIEW_H, VIEW_W } from './render/view'
 
 /** Finds the canvas in index.html, or creates it if the page arrived without it. */
 function canvasById(id: string): HTMLCanvasElement {
@@ -8,8 +10,8 @@ function canvasById(id: string): HTMLCanvasElement {
   if (!c) {
     c = document.createElement('canvas')
     c.id = id
-    c.width = 160
-    c.height = 144
+    c.width = VIEW_W
+    c.height = VIEW_H
     document.body.appendChild(c)
   }
   Object.assign(c.style, {
@@ -28,19 +30,22 @@ const ctx = ui.getContext('2d')!
 
 /** Integer scale only, so pixels stay square and crisp. */
 function resize(): void {
-  const k = Math.max(1, Math.floor(Math.min(window.innerWidth / 160, window.innerHeight / 144)))
+  const k = Math.max(1, Math.floor(Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H)))
   for (const c of [gl, ui]) {
-    c.style.width = `${160 * k}px`
-    c.style.height = `${144 * k}px`
+    c.style.width = `${VIEW_W * k}px`
+    c.style.height = `${VIEW_H * k}px`
   }
 }
 window.addEventListener('resize', resize)
 resize()
 
 const input = new Input()
-const game = new Game(input, gl, ctx)
 
-runLoop(
-  () => game.update(),
-  (alpha) => game.render(alpha),
-)
+// Spritesheets must be decoded before the first frame.
+void loadArt().then((art) => {
+  const game = new Game(input, gl, ctx, art)
+  runLoop(
+    () => game.update(),
+    (alpha) => game.render(alpha),
+  )
+})

@@ -1,0 +1,14 @@
+{
+  "alert": {
+    "sprite": "emotes",
+    "frames": [0, 1],
+    "period": 8,
+    "size": 0.7,
+    "anchor": "head",
+    "offset": { "x": 0, "y": 0.05 },
+    "bob": { "amplitude": 0.08, "speed": 0.2 },
+    "duration": 0,
+    "despawnWithOwner": true,
+    "alwaysOnTop": true
+  }
+}

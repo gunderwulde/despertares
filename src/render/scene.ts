@@ -1,56 +1,14 @@
 import * as THREE from 'three'
+import { Dir, World } from '../sim/world'
 import { MAP_H, MAP_W, T } from '../sim/map'
-import { Dir, MAX_ENEMIES, World } from '../sim/world'
-import { makeHeroTextures, makeSlimeTextures, makeSwordTextures, makeTileTextures } from './textures'
+import { ActorSprite } from './actor-sprite'
+import { type Art, TILE } from './art'
+import { HOLE_RADIUS, makeHoleUniforms } from './seethrough'
+import { buildTileMeshes } from './tilemap'
+import { COS, PERSP_DIST, PERSP_FOV, SIN, SPRITE_H, VIEW_H, VIEW_HALF_W, VIEW_UNITS, VIEW_W, spriteGeometry } from './view'
 
-export const VIEW_W = 160
-export const VIEW_H = 144
+export { VIEW_H, VIEW_W } from './view'
 
-/** World units of screen height at the focus point, in both camera modes. */
-const VIEW_UNITS = 8
-const VIEW_HALF_W = (VIEW_UNITS * (VIEW_W / VIEW_H)) / 2
-const PERSP_FOV = 45
-const PERSP_DIST = VIEW_UNITS / (2 * Math.tan(((PERSP_FOV / 2) * Math.PI) / 180))
-/** Camera pitch above the ground plane; lower is less top-down. */
-const ELEVATION = (40 * Math.PI) / 180
-const SIN = Math.sin(ELEVATION)
-const COS = Math.cos(ELEVATION)
-/** Upright sprites are stretched so a 1-tile sprite covers one screen unit under the tilted camera. */
-const SPRITE_H = 1 / COS
-/** Box heights per tile type; trees and houses give the 2.5D relief. */
-const TILE_HEIGHT = [0.1, 0.1, 0.1, 0.02, 1.8, 1.2, 2.2]
-
-/** See-through hole radius in render pixels (the canvas is 160x144). */
-const HOLE_RADIUS = 15
-/** A fragment only gets cut if it is at least this much closer to the camera than the player. */
-const HOLE_DEPTH_MARGIN = 0.25
-
-// Tall tiles get a hole around the player's screen position: solid inside, ordered-dither
-// band at the edge (pixel-art friendly) and a bright rim on the surviving pixels.
-const GLSL_HEADER = /* glsl */ `
-uniform vec4 uHole; // xy: player centre in pixels, z: radius, w: player view depth
-uniform float uTime;
-float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
-float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
-`
-const GLSL_HOLE = /* glsl */ `
-float holeRing = 0.0;
-{
-  float d = length(gl_FragCoord.xy - uHole.xy);
-  if (uHole.w - vViewPosition.z > ${HOLE_DEPTH_MARGIN.toFixed(2)} && d < uHole.z) {
-    float inside = 1.0 - smoothstep(uHole.z * 0.55, uHole.z, d);
-    if (inside > bayer4(gl_FragCoord.xy) + 0.001) discard;
-    holeRing = smoothstep(uHole.z * 0.7, uHole.z, d);
-  }
-}
-`
-const GLSL_RING = /* glsl */ `
-gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.75, 0.95, 1.0), 0.6 * holeRing * (0.75 + 0.25 * sin(uTime * 6.0)));
-`
-
-function spriteGeometry(): THREE.PlaneGeometry {
-  return new THREE.PlaneGeometry(1, SPRITE_H).translate(0, SPRITE_H / 2, 0)
-}
 
 export class SceneRenderer {
   private readonly renderer: THREE.WebGLRenderer
@@ -59,20 +17,19 @@ export class SceneRenderer {
   private readonly persp = new THREE.PerspectiveCamera(PERSP_FOV, VIEW_W / VIEW_H, 0.1, 100)
   /** Experiment: perspective is the default, press P to compare with the orthographic view. */
   private usePersp = true
-  private readonly heroTex = makeHeroTextures()
-  private readonly slimeTex = makeSlimeTextures()
-  private readonly swordTex = makeSwordTextures()
-  private readonly tileTex = makeTileTextures()
-  private readonly hero: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
-  private readonly heroShadow: THREE.Mesh
+  private readonly hero: ActorSprite
   private readonly sword: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
-  private readonly holeUniforms = { uHole: { value: new THREE.Vector4() }, uTime: { value: 0 } }
+  private readonly enemies: ActorSprite[] = []
+  private readonly vfx: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>[] = []
+  private readonly holes = makeHoleUniforms()
   private readonly tmp = new THREE.Vector3()
   private readonly tmp2 = new THREE.Vector3()
-  private readonly slimes: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>[] = []
-  private readonly slimeShadows: THREE.Mesh[] = []
 
-  constructor(canvas: HTMLCanvasElement, world: World) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    world: World,
+    private readonly art: Art,
+  ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false })
     this.renderer.setPixelRatio(1)
     this.renderer.setSize(VIEW_W, VIEW_H, false)
@@ -87,112 +44,74 @@ export class SceneRenderer {
       if (e.code === 'KeyP') this.usePersp = !this.usePersp
     })
 
-    this.buildTiles(world)
+    buildTileMeshes(this.scene, world.tiles, art.tiles, this.holes)
 
     const geo = spriteGeometry()
     const shadowGeo = new THREE.CircleGeometry(0.32, 14).rotateX(-Math.PI / 2).scale(1, 1, 0.6)
     const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false })
 
-    this.hero = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: this.heroTex[0]!, alphaTest: 0.5 }))
-    this.heroShadow = new THREE.Mesh(shadowGeo, shadowMat)
+    this.hero = new ActorSprite(this.scene, geo, shadowGeo, shadowMat, art.hero[0]!)
     this.sword = new THREE.Mesh(
       new THREE.PlaneGeometry(1, SPRITE_H),
-      new THREE.MeshBasicMaterial({ map: this.swordTex[0]!, transparent: true, depthTest: false }),
+      new THREE.MeshBasicMaterial({ map: art.sword[0]!, transparent: true, depthTest: false }),
     )
     this.sword.renderOrder = 10
     this.sword.visible = false
-    this.scene.add(this.hero, this.heroShadow, this.sword)
+    this.scene.add(this.sword)
 
-    for (let i = 0; i < MAX_ENEMIES; i++) {
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: this.slimeTex[0]!, alphaTest: 0.5 }))
-      const s = new THREE.Mesh(shadowGeo, shadowMat)
-      this.slimes.push(m)
-      this.slimeShadows.push(s)
-      this.scene.add(m, s)
+    for (const e of world.enemies) {
+      this.enemies.push(new ActorSprite(this.scene, geo, shadowGeo, shadowMat, art.enemies[e.def.sprite]![0]!))
     }
-  }
 
-  private addSeeThrough(mat: THREE.MeshLambertMaterial): void {
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uHole = this.holeUniforms.uHole
-      shader.uniforms.uTime = this.holeUniforms.uTime
-      shader.fragmentShader = shader.fragmentShader
-        .replace('void main() {', `${GLSL_HEADER}\nvoid main() {`)
-        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${GLSL_HOLE}`)
-        .replace('#include <opaque_fragment>', `#include <opaque_fragment>\n${GLSL_RING}`)
+    // One quad per pooled effect; sized and textured each frame from the effect's config.
+    const quad = new THREE.PlaneGeometry(1, 1)
+    for (let i = 0; i < world.vfx.pool.length; i++) {
+      const m = new THREE.Mesh(quad, new THREE.MeshBasicMaterial({ transparent: true }))
+      m.visible = false
+      this.scene.add(m)
+      this.vfx.push(m)
     }
-  }
-
-  private buildTiles(world: World): void {
-    const counts = new Array<number>(this.tileTex.length).fill(0)
-    for (let i = 0; i < world.tiles.length; i++) counts[world.tiles[i]!]!++
-    const box = new THREE.BoxGeometry(1, 1, 1)
-    const m = new THREE.Matrix4()
-    const idx = new Array<number>(this.tileTex.length).fill(0)
-    const meshes = this.tileTex.map((tex, t) => {
-      const mat = new THREE.MeshLambertMaterial({ map: tex })
-      if (t >= T.Tree) this.addSeeThrough(mat)
-      const mesh = new THREE.InstancedMesh(box, mat, Math.max(counts[t]!, 1))
-      mesh.count = counts[t]!
-      this.scene.add(mesh)
-      return mesh
-    })
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        const t = world.tiles[y * MAP_W + x]!
-        const h = TILE_HEIGHT[t]!
-        m.makeScale(1, h, 1).setPosition(x + 0.5, h / 2, y + 0.5)
-        meshes[t]!.setMatrixAt(idx[t]!++, m)
-      }
-    }
-  }
-
-  private place(mesh: THREE.Object3D, x: number, y: number, z: number): void {
-    mesh.position.set(x, y, z)
   }
 
   update(world: World, alpha: number, timeMs: number): void {
     const lerp = (a: number, b: number): number => a + (b - a) * alpha
 
     // Water scroll in 1/16 steps keeps it pixel-aligned.
-    this.tileTex[T.Water]!.offset.x = Math.floor(timeMs / 250) / 16
+    this.art.tiles[T.Water]!.offset.x = Math.floor(timeMs / (4000 / TILE)) / TILE
 
-    const px = lerp(world.ppx, world.px)
-    const py = lerp(world.ppy, world.py)
-    this.place(this.hero, px, 0.1, py)
-    this.place(this.heroShadow, px, 0.115, py)
-    const frame = world.moving ? (world.walkPhase >> 3) & 1 : 0
-    this.hero.material.map = this.heroTex[world.dir * 2 + frame]!
-    this.hero.visible = !(world.invul > 0 && (world.tick >> 2) & 1)
+    const player = world.player
+    const px = lerp(player.px, player.x)
+    const py = lerp(player.py, player.y)
+    this.hero.place(px, py)
+    this.hero.setFrame(this.art.hero[player.dir * 2 + (player.moving ? (player.walkPhase >> 3) & 1 : 0)]!)
+    this.hero.visible = !(player.invulnerable && (world.tick >> 2) & 1)
 
-    this.sword.visible = world.attackT > 2
+    this.sword.visible = player.swordVisible
     if (this.sword.visible) {
       let sx = 0
       let sy = 0
-      switch (world.dir) {
+      switch (player.dir) {
         case Dir.Down: sx = 0.05; sy = 0.5; break
         case Dir.Up: sx = -0.05; sy = -0.85; break
         case Dir.Left: sx = -0.75; sy = 0.1; break
         default: sx = 0.75; sy = 0.1
       }
-      this.sword.material.map = this.swordTex[world.dir]!
+      this.sword.material.map = this.art.sword[player.dir]!
       // Screen-space offset: moving along the camera's up vector shifts the quad by exactly that many view units.
-      this.place(this.sword, px + sx, 0.1 + COS * -sy + SPRITE_H / 2, py - SIN * -sy)
+      this.sword.position.set(px + sx, 0.1 + COS * -sy + SPRITE_H / 2, py - SIN * -sy)
     }
 
-    for (let i = 0; i < MAX_ENEMIES; i++) {
-      const alive = world.ealive[i] === 1
-      this.slimes[i]!.visible = alive
-      this.slimeShadows[i]!.visible = alive
-      if (!alive) continue
-      const x = lerp(world.epx[i]!, world.ex[i]!)
-      const y = lerp(world.epy[i]!, world.ey[i]!)
-      this.place(this.slimes[i]!, x, 0.1, y)
-      this.place(this.slimeShadows[i]!, x, 0.115, y)
-      const mat = this.slimes[i]!.material
-      mat.map = this.slimeTex[((world.tick + i * 7) >> 4) & 1]!
-      mat.color.setHex(world.ehurt[i]! > 0 ? 0xff7070 : 0xffffff)
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = world.enemies[i]!
+      const view = this.enemies[i]!
+      view.visible = e.alive
+      if (!e.alive) continue
+      view.place(lerp(e.px, e.x), lerp(e.py, e.y), e.z)
+      view.setFrame(this.art.enemies[e.def.sprite]![e.frame]!)
+      view.tint(e.flashing ? 0xff7070 : 0xffffff)
     }
+
+    this.updateVfx(world, lerp)
 
     // Camera follows the interpolated player position, clamped so the view stays on the map.
     const camX = Math.min(Math.max(px, VIEW_HALF_W), MAP_W - VIEW_HALF_W)
@@ -207,13 +126,34 @@ export class SceneRenderer {
     this.tmp.set(px, 0.1 + SPRITE_H * 0.5, py)
     const depth = -this.tmp2.copy(this.tmp).applyMatrix4(cam.matrixWorldInverse).z
     this.tmp.project(cam)
-    this.holeUniforms.uHole.value.set(
+    this.holes.uHole.value.set(
       ((this.tmp.x + 1) / 2) * VIEW_W,
       ((this.tmp.y + 1) / 2) * VIEW_H,
       HOLE_RADIUS,
       depth,
     )
-    this.holeUniforms.uTime.value = timeMs / 1000
+    this.holes.uTime.value = timeMs / 1000
+  }
+
+  /** Effects follow their owner's interpolated position; anchor, size, bob and layering come from VfxDef. */
+  private updateVfx(world: World, lerp: (a: number, b: number) => number): void {
+    const pool = world.vfx.pool
+    for (let i = 0; i < pool.length; i++) {
+      const v = pool[i]!
+      const m = this.vfx[i]!
+      m.visible = v.active
+      if (!v.active) continue
+      const def = v.def!
+      const mat = m.material
+      mat.map = this.art.vfx[def.sprite]![v.frame]!
+      mat.depthTest = !def.alwaysOnTop
+      m.renderOrder = def.alwaysOnTop ? 11 : 0
+      m.scale.set(def.size, def.size, 1)
+      const bob = Math.abs(Math.sin(v.age * def.bobSpeed)) * def.bobAmplitude
+      const base = v.owner ? v.owner.z : 0
+      const lift = def.anchor === 'head' ? SPRITE_H : 0
+      m.position.set(lerp(v.px, v.x), 0.1 + base + lift + def.offsetY + def.size / 2 + bob, lerp(v.py, v.y))
+    }
   }
 
   private activeCamera(): THREE.Camera {

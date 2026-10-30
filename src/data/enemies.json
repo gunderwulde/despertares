@@ -1,0 +1,68 @@
+{
+  "roster": [
+    { "enemy": "slime", "count": 4 },
+    { "enemy": "jumper", "count": 2 }
+  ],
+  "enemies": {
+    "slime": {
+      "sprite": "slime",
+      "health": 2,
+      "body": { "hw": 0.3, "h": 0.5 },
+      "contactEffect": "ContactDamage",
+      "abilities": {
+        "wander": { "type": "moveBurst", "frames": 24, "speed": 0.028 }
+      },
+      "brain": {
+        "wander": "wander",
+        "idle": { "min": 20, "range": 40 },
+        "chase": { "range": 4, "chance": 0.55 }
+      },
+      "animation": [{ "frames": [0, 1], "period": 16, "phase": 7 }]
+    },
+    "jumper": {
+      "sprite": "jumper",
+      "health": 3,
+      "body": { "hw": 0.3, "h": 0.5 },
+      "contactEffect": "ContactDamage",
+      "abilities": {
+        "hop": { "type": "moveBurst", "frames": 20, "speed": 0.05, "arc": 0.3, "grantedTags": ["Airborne"] },
+        "alert": { "type": "timed", "frames": 40, "grantedTags": ["Warning"], "then": "leap" },
+        "leap": {
+          "type": "leap",
+          "target": "player",
+          "speed": 0.16,
+          "arc": 1.1,
+          "minFrames": 14,
+          "maxFrames": 30,
+          "maxRange": 6,
+          "then": "rest"
+        },
+        "rest": { "type": "timed", "frames": 30, "grantedTags": ["Resting"], "then": "back" },
+        "back": {
+          "type": "leap",
+          "target": "home",
+          "speed": 0.09,
+          "arc": 0.4,
+          "minFrames": 12,
+          "maxFrames": 60,
+          "maxRange": 6
+        }
+      },
+      "brain": {
+        "wander": "hop",
+        "idle": { "min": 25, "range": 40 },
+        "home": { "leash": 3, "chance": 0.7 },
+        "windup": 8,
+        "sight": { "range": 4.5, "ability": "alert" },
+        "chainIdle": { "min": 20, "range": 30 }
+      },
+      "animation": [
+        { "tags": ["Warning"], "frames": [2, 3], "period": 4 },
+        { "tags": ["Airborne"], "frames": [4] },
+        { "when": "windup", "frames": [1] },
+        { "frames": [0] }
+      ],
+      "vfx": [{ "tags": ["Warning"], "effect": "alert" }]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "ContactDamage": {
+    "attribute": "health",
+    "delta": -1,
+    "blockedByTags": ["Invulnerable", "Dead"],
+    "knockback": 0.1,
+    "linked": [
+      { "duration": 8, "grantedTags": ["Stunned"] },
+      { "duration": 70, "grantedTags": ["Invulnerable"] }
+    ]
+  },
+  "SwordHit": {
+    "attribute": "health",
+    "delta": -1,
+    "blockedByTags": ["Invulnerable", "Dead"],
+    "knockback": 0.14,
+    "linked": [
+      { "duration": 6, "grantedTags": ["Stunned"] },
+      { "duration": 18, "grantedTags": ["Invulnerable"] }
+    ]
+  },
+  "Respawn": { "duration": 60, "grantedTags": ["Invulnerable"] }
+}

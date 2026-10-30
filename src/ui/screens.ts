@@ -5,6 +5,8 @@ import { drawLogo, drawText, drawTextCentered } from './font'
 
 export const W = 160
 export const H = 144
+/** The UI canvas is drawn at W x H and scaled by this factor to match the 3D render resolution. */
+export const UI_SCALE = 2
 
 const rng = new Rng(2024)
 const STARS = Array.from({ length: 46 }, () => ({ x: rng.int(W), y: rng.int(84), p: rng.int(100) }))
