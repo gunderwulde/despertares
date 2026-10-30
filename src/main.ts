@@ -2,8 +2,28 @@ import { runLoop } from './core/loop'
 import { Game } from './game/game'
 import { Input } from './input/input'
 
-const gl = document.getElementById('gl') as HTMLCanvasElement
-const ui = document.getElementById('ui') as HTMLCanvasElement
+/** Finds the canvas in index.html, or creates it if the page arrived without it. */
+function canvasById(id: string): HTMLCanvasElement {
+  let c = document.getElementById(id) as HTMLCanvasElement | null
+  if (!c) {
+    c = document.createElement('canvas')
+    c.id = id
+    c.width = 160
+    c.height = 144
+    document.body.appendChild(c)
+  }
+  Object.assign(c.style, {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    transform: 'translate(-50%, -50%)',
+    imageRendering: 'pixelated',
+  })
+  return c
+}
+
+const gl = canvasById('gl')
+const ui = canvasById('ui')
 const ctx = ui.getContext('2d')!
 
 /** Integer scale only, so pixels stay square and crisp. */
