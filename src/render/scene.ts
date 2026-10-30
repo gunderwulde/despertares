@@ -6,6 +6,9 @@ import { makeHeroTextures, makeSlimeTextures, makeSwordTextures, makeTileTexture
 export const VIEW_W = 160
 export const VIEW_H = 144
 
+const PERSP_FOV = 45
+/** Distance at which the perspective frustum shows 9 world units of height at the focus point, like the ortho view. */
+const PERSP_DIST = 9 / (2 * Math.tan(((PERSP_FOV / 2) * Math.PI) / 180))
 const ELEVATION = (60 * Math.PI) / 180
 const SIN = Math.sin(ELEVATION)
 const COS = Math.cos(ELEVATION)
@@ -21,7 +24,10 @@ function spriteGeometry(): THREE.PlaneGeometry {
 export class SceneRenderer {
   private readonly renderer: THREE.WebGLRenderer
   private readonly scene = new THREE.Scene()
-  private readonly camera = new THREE.OrthographicCamera(-5, 5, 4.5, -4.5, 0.1, 100)
+  private readonly ortho = new THREE.OrthographicCamera(-5, 5, 4.5, -4.5, 0.1, 100)
+  private readonly persp = new THREE.PerspectiveCamera(PERSP_FOV, VIEW_W / VIEW_H, 0.1, 100)
+  /** Experiment: perspective is the default, press P to compare with the orthographic view. */
+  private usePersp = true
   private readonly heroTex = makeHeroTextures()
   private readonly slimeTex = makeSlimeTextures()
   private readonly swordTex = makeSwordTextures()
@@ -45,6 +51,10 @@ export class SceneRenderer {
     const sun = new THREE.DirectionalLight(0xfff2d8, 1.5)
     sun.position.set(-3, 6, 4)
     this.scene.add(sun)
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyP') this.usePersp = !this.usePersp
+    })
 
     this.buildTiles(world)
 
@@ -151,10 +161,15 @@ export class SceneRenderer {
     const k = 1 - Math.exp(-dtMs * 0.012)
     this.camX += (tx - this.camX) * k
     this.camZ += (tz - this.camZ) * k
-    const D = 30
-    this.camera.position.set(this.camX, SIN * D, this.camZ + COS * D)
-    this.camera.lookAt(this.camX, 0, this.camZ)
-    this.camera.updateMatrixWorld()
+    const cam = this.activeCamera()
+    const D = this.usePersp ? PERSP_DIST : 30
+    cam.position.set(this.camX, SIN * D, this.camZ + COS * D)
+    cam.lookAt(this.camX, 0, this.camZ)
+    cam.updateMatrixWorld()
+  }
+
+  private activeCamera(): THREE.Camera {
+    return this.usePersp ? this.persp : this.ortho
   }
 
   snapCamera(): void {
@@ -162,6 +177,6 @@ export class SceneRenderer {
   }
 
   render(): void {
-    this.renderer.render(this.scene, this.camera)
+    this.renderer.render(this.scene, this.activeCamera())
   }
 }
